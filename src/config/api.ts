@@ -18,9 +18,8 @@ const DEV_API_URL = Platform.select({
 // const DEV_API_URL = 'http://192.168.0.10:3000';
 
 // 프로덕션 환경 (Lambda API Gateway URL)
-// .env.production 파일에서 설정하거나 여기에 직접 입력
-// 예: https://abc123def.execute-api.ap-northeast-2.amazonaws.com/prod
-const PROD_API_URL = process.env.PROD_API_URL || 'https://your-api-gateway-url.execute-api.ap-northeast-2.amazonaws.com/prod';
+// FairStay Backend API (AWS Lambda)
+const PROD_API_URL = 'https://y0uhk6afg9.execute-api.ap-northeast-2.amazonaws.com/default/fairstay-mvp-backend';
 
 // 현재 환경에 따라 API URL 선택
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;

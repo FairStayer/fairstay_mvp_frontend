@@ -27,6 +27,14 @@ compileSdk = 34
 // ✅ 해결: 35로 업그레이드
 compileSdk = 35
 
+# 4. Android 번들 파일 누락
+1) android\app\src\main\assets\모든 파일삭제
++ assets폴더가 없다면 생성
+2) 아래 명렁어 실행
+react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle
+3) android\app\src\main\assets\index.android.bundle 
+4) 위 폴더 위치의 파란색 글씨(index.android.bundle)가 생성되었으면 끝
+
 # 아니 또 이제 백엔드 켠 후에는 아래 코드로 하라네
 npm start
 

@@ -31,8 +31,7 @@ export interface ApiResponse<T = any> {
 
 export interface SessionResponse {
   sessionId: string;
-  userType: string;
-  createdAt: number;
+  expiresAt: number;
 }
 
 export interface ImageUploadResponse {
@@ -78,15 +77,21 @@ export interface ImageDetailResponse {
 /**
  * 세션 생성
  */
-export const createSession = async (userType: 'tenant' | 'landlord'): Promise<SessionResponse> => {
+export const createSession = async (): Promise<SessionResponse> => {
   try {
-    const response = await apiClient.post<{ success: boolean; session: SessionResponse }>(
-      API_ENDPOINTS.CREATE_SESSION,
-      { userType }
+    const response = await apiClient.post<{ 
+      success: boolean; 
+      sessionId: string;
+      expiresAt: number;
+    }>(
+      API_ENDPOINTS.CREATE_SESSION
     );
     
-    if (response.data.success && response.data.session) {
-      return response.data.session;
+    if (response.data.success) {
+      return {
+        sessionId: response.data.sessionId,
+        expiresAt: response.data.expiresAt,
+      };
     }
     
     throw new Error('Failed to create session');
@@ -97,46 +102,82 @@ export const createSession = async (userType: 'tenant' | 'landlord'): Promise<Se
 };
 
 /**
- * 이미지 업로드
+ * 이미지 업로드 (3단계 프로세스)
+ * 1단계: Presigned URL 받기
+ * 2단계: S3에 직접 업로드
+ * 3단계: 업로드 완료 확인
  */
 export const uploadImage = async (
   imageUri: string, 
   sessionId: string
 ): Promise<ImageUploadResponse> => {
   try {
-    // React Native에서 이미지 파일 준비
-    const formData = new FormData();
-    
-    // 이미지 파일 추가
-    formData.append('image', {
-      uri: imageUri,
-      type: 'image/jpeg',
-      name: 'photo.jpg',
-    } as any);
-    
-    // 세션 ID 추가
-    formData.append('sessionId', sessionId);
-    
-    const response = await apiClient.post<{ success: boolean } & ImageUploadResponse>(
-      API_ENDPOINTS.UPLOAD_IMAGE,
-      formData,
+    // 1단계: Presigned URL 받기
+    const filename = `photo_${Date.now()}.jpg`;
+    const presignedResponse = await apiClient.post<{ 
+      success: boolean;
+      uploadUrl: string;
+      s3Key: string;
+      imageUrl: string;
+      expiresIn: number;
+    }>(
+      API_ENDPOINTS.PRESIGNED_URL,
       {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        sessionId,
+        filename,
+        contentType: 'image/jpeg'
+      }
+    );
+    
+    if (!presignedResponse.data.success) {
+      throw new Error('Failed to get presigned URL');
+    }
+    
+    const { uploadUrl, s3Key, imageUrl } = presignedResponse.data;
+    
+    // 2단계: S3에 직접 업로드
+    // React Native에서 이미지 파일 읽기
+    const imageBlob = await fetch(imageUri).then(res => res.blob());
+    
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'image/jpeg',
+      },
+      body: imageBlob,
+    });
+    
+    if (!uploadResponse.ok) {
+      throw new Error('Failed to upload image to S3');
+    }
+    
+    // 3단계: 업로드 완료 확인
+    const confirmResponse = await apiClient.post<{ 
+      success: boolean;
+      imageId: string;
+      imageUrl: string;
+      message: string;
+    }>(
+      API_ENDPOINTS.CONFIRM_UPLOAD,
+      {
+        sessionId,
+        s3Key,
+        imageUrl
+      },
+      {
         timeout: UPLOAD_TIMEOUT,
       }
     );
     
-    if (response.data.success) {
+    if (confirmResponse.data.success) {
       return {
-        imageId: response.data.imageId,
-        imageUrl: response.data.imageUrl,
-        message: response.data.message,
+        imageId: confirmResponse.data.imageId,
+        imageUrl: confirmResponse.data.imageUrl,
+        message: confirmResponse.data.message,
       };
     }
     
-    throw new Error('Failed to upload image');
+    throw new Error('Failed to confirm image upload');
   } catch (error) {
     console.error('Upload image error:', error);
     throw handleApiError(error);
@@ -195,14 +236,27 @@ export const getImageDetail = async (imageId: string): Promise<ImageDetailRespon
 /**
  * 공유 링크 생성
  */
-export const shareImage = async (imageId: string): Promise<{ shareUrl: string }> => {
+export const shareImage = async (imageId: string): Promise<{ 
+  shareUrl: string;
+  shareId: string;
+  expiresAt: number;
+}> => {
   try {
-    const response = await apiClient.post<{ success: boolean; shareUrl: string }>(
-      API_ENDPOINTS.SHARE_IMAGE(imageId)
+    const response = await apiClient.post<{ 
+      success: boolean; 
+      shareUrl: string;
+      shareId: string;
+      expiresAt: number;
+    }>(
+      API_ENDPOINTS.GENERATE_SHARE_LINK(imageId)
     );
     
     if (response.data.success) {
-      return { shareUrl: response.data.shareUrl };
+      return { 
+        shareUrl: response.data.shareUrl,
+        shareId: response.data.shareId,
+        expiresAt: response.data.expiresAt,
+      };
     }
     
     throw new Error('Failed to create share link');
@@ -213,12 +267,78 @@ export const shareImage = async (imageId: string): Promise<{ shareUrl: string }>
 };
 
 /**
+ * 세션의 모든 이미지 조회
+ */
+export const getSessionImages = async (sessionId: string): Promise<{
+  count: number;
+  images: ImageDetailResponse[];
+}> => {
+  try {
+    const response = await apiClient.get<{ 
+      success: boolean; 
+      count: number;
+      images: ImageDetailResponse[];
+    }>(
+      API_ENDPOINTS.GET_SESSION_IMAGES(sessionId)
+    );
+    
+    if (response.data.success) {
+      return {
+        count: response.data.count,
+        images: response.data.images,
+      };
+    }
+    
+    throw new Error('Failed to get session images');
+  } catch (error) {
+    console.error('Get session images error:', error);
+    throw handleApiError(error);
+  }
+};
+
+/**
+ * 카카오톡 공유용 데이터 생성
+ */
+export const getKakaoShareData = async (imageId: string): Promise<{
+  title: string;
+  description: string;
+  imageUrl: string;
+  shareUrl: string;
+}> => {
+  try {
+    const response = await apiClient.post<{ 
+      success: boolean; 
+      kakaoShareData: {
+        title: string;
+        description: string;
+        imageUrl: string;
+        shareUrl: string;
+      };
+    }>(
+      API_ENDPOINTS.KAKAO_SHARE(imageId)
+    );
+    
+    if (response.data.success) {
+      return response.data.kakaoShareData;
+    }
+    
+    throw new Error('Failed to get kakao share data');
+  } catch (error) {
+    console.error('Get kakao share data error:', error);
+    throw handleApiError(error);
+  }
+};
+
+/**
  * 설문 제출
  */
 export const submitSurvey = async (surveyData: {
   sessionId: string;
-  imageId: string;
-  responses: Record<string, any>;
+  hasRealEstateExperience: boolean;
+  explanationRating: number;
+  processConvenienceRating: number;
+  overallSatisfactionRating: number;
+  additionalComments?: string;
 }): Promise<{ success: boolean; message: string }> => {
   try {
     const response = await apiClient.post<{ success: boolean; message: string }>(
@@ -273,7 +393,9 @@ export default {
   uploadImage,
   analyzeImage,
   getImageDetail,
+  getSessionImages,
   shareImage,
+  getKakaoShareData,
   submitSurvey,
   checkConnection,
 };

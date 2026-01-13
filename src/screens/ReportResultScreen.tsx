@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
@@ -15,6 +16,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, spacing, typography } from '../styles';
 import * as api from '../services/api';
+import ImagePickerModal from '../components/ImagePickerModal';
 
 type ReportResultScreenRouteProp = RouteProp<RootStackParamList, 'ReportResult'>;
 type ReportResultScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ReportResult'>;
@@ -29,6 +31,7 @@ export default function ReportResultScreen({ route, navigation }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [imageData, setImageData] = useState<api.ImageDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isShareModalVisible, setIsShareModalVisible] = useState(false);
 
   useEffect(() => {
     if (imageId && !analysisResult) {
@@ -39,7 +42,7 @@ export default function ReportResultScreen({ route, navigation }: Props) {
       setImageData({
         id: imageId || '',
         sessionId: '',
-        imageUrl: '',
+        imageUrl: analysisResult.imageUrl || '',
         processedImageUrl: analysisResult.processedImageUrl,
         damageAnalysis: {
           status: analysisResult.status,
@@ -68,22 +71,56 @@ export default function ReportResultScreen({ route, navigation }: Props) {
     }
   };
 
-  const handleNext = () => {
+  const handleSharePDF = async () => {
+    if (!imageId) {
+      Alert.alert('오류', '이미지 ID가 없습니다.');
+      return;
+    }
+
+    try {
+      const shareData = await api.shareImage(imageId);
+      Alert.alert(
+        'PDF 공유',
+        `공유 링크가 생성되었습니다:\n${shareData.shareUrl}`,
+        [
+          { text: '취소', style: 'cancel' },
+          { 
+            text: '링크 열기', 
+            onPress: () => Linking.openURL(shareData.shareUrl) 
+          },
+        ]
+      );
+    } catch (error: any) {
+      Alert.alert('오류', error.message || 'PDF 공유 링크 생성에 실패했습니다.');
+    }
+  };
+
+  const handleShareKakao = async () => {
+    if (!imageId) {
+      Alert.alert('오류', '이미지 ID가 없습니다.');
+      return;
+    }
+
+    try {
+      const kakaoData = await api.getKakaoShareData(imageId);
+      Alert.alert(
+        '카카오톡 공유',
+        `카카오톡 공유 데이터가 생성되었습니다.\n\n제목: ${kakaoData.title}\n설명: ${kakaoData.description}`,
+        [
+          { text: '확인' }
+        ]
+      );
+      // TODO: 실제 카카오톡 SDK 연동 필요
+    } catch (error: any) {
+      Alert.alert('오류', error.message || '카카오톡 공유에 실패했습니다.');
+    }
+  };
+
+  const handleComplete = () => {
     navigation.navigate('Home');
   };
 
-  // 예시 데이터 (API 데이터 없을 때)
-  const sampleData = [
-    {
-      type: 'crack',
-      severity: 'medium',
-      location: '벽지',
-      confidence: 0.85,
-      description: '전반적으로 사용감은 있으나 흠집이나 변색된 부분이 없으며 상태가 좋아보임.',
-    },
-  ];
-
-  const damages = imageData?.damageAnalysis?.damages || sampleData;
+  const damages = imageData?.damageAnalysis?.damages || [];
 
   if (isLoading) {
     return (
@@ -115,48 +152,52 @@ export default function ReportResultScreen({ route, navigation }: Props) {
           </View>
         )}
 
+        {/* 손상 데이터가 없을 때 */}
+        {damages.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Text style={[typography.bodyL, styles.emptyText]}>
+              분석된 손상이 없습니다.
+            </Text>
+          </View>
+        )}
+
+        {/* 손상 데이터 표시 */}
         {damages.map((damage, index) => (
           <View key={index} style={styles.blockWrapper}>
 
             {/* 이미지 제목 */}
             <Text style={[typography.titleM, styles.imageLabel]}>
-              손상 {index + 1}
+              이미지{index + 1}
             </Text>
 
             {/* AI 처리된 이미지 박스 */}
-            {imageData?.processedImageUrl && (
-              <View style={styles.imagePlaceholder}>
+            <View style={styles.imagePlaceholder}>
+              {(imageData?.processedImageUrl || imageData?.imageUrl) ? (
                 <Image
-                  source={{ uri: imageData.processedImageUrl }}
+                  source={{ uri: imageData.processedImageUrl || imageData.imageUrl }}
                   style={styles.resultImage}
-                  resizeMode="contain"
+                  resizeMode="cover"
                 />
-              </View>
-            )}
+              ) : (
+                <Text style={[typography.bodyM, styles.placeholderText]}>
+                  이미지 없음
+                </Text>
+              )}
+            </View>
 
             {/* 항목 */}
             <View style={styles.infoRow}>
-              <Text style={[typography.bodyL, styles.fieldLabel]}>유형</Text>
-              <Text style={[typography.bodyL, styles.fieldValue]}>{damage.type}</Text>
-            </View>
-
-            {/* 심각도 */}
-            <View style={styles.infoRow}>
-              <Text style={[typography.bodyL, styles.fieldLabel]}>심각도</Text>
-              <Text style={[typography.bodyL, styles.fieldValue]}>{damage.severity}</Text>
-            </View>
-
-            {/* 위치 */}
-            <View style={styles.infoRow}>
-              <Text style={[typography.bodyL, styles.fieldLabel]}>위치</Text>
-              <Text style={[typography.bodyL, styles.fieldValue]}>{damage.location}</Text>
-            </View>
-
-            {/* 신뢰도 */}
-            <View style={styles.infoRow}>
-              <Text style={[typography.bodyL, styles.fieldLabel]}>신뢰도</Text>
+              <Text style={[typography.bodyL, styles.fieldLabel]}>항목</Text>
               <Text style={[typography.bodyL, styles.fieldValue]}>
-                {(damage.confidence * 100).toFixed(0)}%
+                {damage.location || damage.type || '알 수 없음'}
+              </Text>
+            </View>
+
+            {/* 손상도 */}
+            <View style={styles.infoRow}>
+              <Text style={[typography.bodyL, styles.fieldLabel]}>손상도</Text>
+              <Text style={[typography.bodyL, styles.fieldValue]}>
+                {damage.confidence ? `${(damage.confidence * 100).toFixed(0)}%` : '알 수 없음'}
               </Text>
             </View>
 
@@ -172,12 +213,43 @@ export default function ReportResultScreen({ route, navigation }: Props) {
 
           </View>
         ))}
+
+        {/* 레포트 내보내기 섹션 */}
+        {damages.length > 0 && (
+          <View style={styles.shareSection}>
+            <Text style={[typography.titleM, styles.shareTitle]}>레포트 내보내기</Text>
+
+            {/* PDF로 내보내기 버튼 */}
+            <TouchableOpacity style={styles.shareButton} onPress={handleSharePDF}>
+              <View style={[styles.iconCircle, { backgroundColor: '#E53935' }]}>
+                <Text style={styles.iconText}>PDF</Text>
+              </View>
+              <Text style={[typography.bodyL, styles.shareButtonText]}>PDF로 내보내기</Text>
+            </TouchableOpacity>
+
+            {/* 카카오톡으로 내보내기 버튼 */}
+            <TouchableOpacity style={styles.shareButton} onPress={handleShareKakao}>
+              <View style={[styles.iconCircle, { backgroundColor: '#FEE500' }]}>
+                <Text style={[styles.iconText, { color: '#000' }]}>톡</Text>
+              </View>
+              <Text style={[typography.bodyL, styles.shareButtonText]}>카카오톡으로 내보내기</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
-      {/* OK 버튼 */}
-      <TouchableOpacity style={styles.button} onPress={handleNext}>
-        <Text style={[typography.titleM, styles.buttonText]}>OK</Text>
+      {/* 완료 버튼 */}
+      <TouchableOpacity style={styles.button} onPress={handleComplete}>
+        <Text style={[typography.titleM, styles.buttonText]}>완료</Text>
       </TouchableOpacity>
+
+      {/* 공유 모달 (필요시) */}
+      <ImagePickerModal
+        visible={isShareModalVisible}
+        onClose={() => setIsShareModalVisible(false)}
+        onCamera={handleSharePDF}
+        onGallery={handleShareKakao}
+      />
     </SafeAreaView>
   );
 }
@@ -203,17 +275,28 @@ const styles = StyleSheet.create({
   },
 
   errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.xl,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 12,
+    padding: spacing.m,
+    marginBottom: spacing.xl,
   },
 
   errorText: {
     color: '#E53935',
     textAlign: 'center',
-    marginBottom: spacing.xl,
+  },
+
+  emptyContainer: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: spacing.xxl,
+    marginVertical: spacing.xl,
+    alignItems: 'center',
+  },
+
+  emptyText: {
+    color: colors.secondary,
+    textAlign: 'center',
   },
 
   logo: {
@@ -244,28 +327,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.l,
+    overflow: 'hidden',
   },
 
   resultImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 18,
   },
 
-  imageBox: {
-    width: '100%',
-    height: 220,
-    backgroundColor: '#DDE1E6',
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.l,
-  },
-  realImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 18,
-  },
   placeholderText: {
     color: '#9AA1A9',
   },
@@ -274,24 +343,73 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: spacing.m,
   },
+  
   infoRowColumn: {
     marginBottom: spacing.m,
   },
 
   fieldLabel: {
     fontWeight: '600',
-    color: colors.secondary,
+    color: colors.primary,
     marginBottom: spacing.xs,
+    minWidth: 70,
   },
+  
   fieldValue: {
     color: colors.background,
     marginLeft: spacing.s,
+    flex: 1,
   },
 
   description: {
     color: colors.background,
     opacity: 0.8,
     lineHeight: 20,
+    marginTop: spacing.xs,
+  },
+
+  shareSection: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: `${colors.background}20`,
+  },
+
+  shareTitle: {
+    color: colors.background,
+    textAlign: 'center',
+    marginBottom: spacing.l,
+  },
+
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: `${colors.background}30`,
+    borderRadius: 12,
+    padding: spacing.m,
+    marginBottom: spacing.m,
+  },
+
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.m,
+  },
+
+  iconText: {
+    color: colors.surface,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  shareButtonText: {
+    color: colors.background,
+    flex: 1,
   },
 
   button: {
@@ -305,6 +423,7 @@ const styles = StyleSheet.create({
     bottom: spacing.xl,
     alignSelf: 'center',
   },
+  
   buttonText: {
     color: colors.surface,
   },

@@ -52,7 +52,7 @@ export default function TenantHomeScreen({ navigation }: Props) {
       // 세션이 없으면 새로 생성
       if (!storedSessionId) {
         console.log('Creating new session...');
-        const session = await api.createSession('tenant');
+        const session = await api.createSession();
         storedSessionId = session.sessionId;
         await AsyncStorage.setItem(SESSION_STORAGE_KEY, storedSessionId);
         console.log('Session created:', storedSessionId);
@@ -99,17 +99,20 @@ export default function TenantHomeScreen({ navigation }: Props) {
     }
 
     setIsLoading(true);
+    Alert.alert('디버그', '이미지 업로드 시작');
 
     try {
       // 1. 이미지 업로드
       console.log('Uploading image...');
       const uploadResult = await api.uploadImage(imageUri, sessionId);
       console.log('Image uploaded:', uploadResult.imageId);
+      Alert.alert('디버그', `업로드 완료: ${uploadResult.imageId}`);
 
       // 2. AI 분석 요청
       console.log('Analyzing image...');
       const analysisResult = await api.analyzeImage(uploadResult.imageId);
       console.log('Analysis completed:', analysisResult);
+      Alert.alert('디버그', `분석 완료: ${analysisResult.damages.length}개 손상 발견`);
 
       // 3. 결과 화면으로 이동
       navigation.navigate('ReportResult', {
@@ -120,7 +123,7 @@ export default function TenantHomeScreen({ navigation }: Props) {
       console.error('Upload and analyze error:', error);
       Alert.alert(
         '오류',
-        error.message || '이미지 업로드 및 분석 중 오류가 발생했습니다.',
+        `${error.message || '이미지 업로드 및 분석 중 오류가 발생했습니다.'}\n\n상세: ${JSON.stringify(error)}`,
         [{ text: '확인' }]
       );
     } finally {

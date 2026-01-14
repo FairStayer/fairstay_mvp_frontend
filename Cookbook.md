@@ -38,6 +38,10 @@ react-native bundle --platform android --dev false --entry-file index.js --bundl
 # 아니 또 이제 백엔드 켠 후에는 아래 코드로 하라네
 npm start
 
+# 이거 하면 자동으로 apk 파일 만들어서 휴대폰에서 다운받기
+ npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle && cd android && ./gradlew assembleDebug --no-daemon && cd ..
+# npm start까지 확인하고 -> 위 명령어 쳐서 apk 파일 만들고 -> android/app/build/outputs/apk/debug/app-debug.apk 를 구글 드라이브에 업로드해서 -> 휴대폰에서 다운로드 -> 설치하시겠습니까? 아니면 업데이트하시겠습니까?로 나오면 Yes 눌러서 받고 확인
+
 # IP 확인
 ipconfig getifaddr en0
 
